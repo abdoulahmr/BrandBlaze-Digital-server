@@ -1,10 +1,12 @@
-from flask import Flask, jsonify, request, render_template
-from models import Message, db, User, FacebookMarketingRequest
+from datetime import datetime
+from flask import Flask, jsonify, request
+from models import InstagramMarketingRequest, Messages, RequestIDs, SnapchatMarketingRequest, TiktokMarketingRequest, db, User, FacebookMarketingRequest
 from config import Config
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required, JWTManager, unset_jwt_cookies
+from sqlalchemy.exc import SQLAlchemyError
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -37,11 +39,7 @@ def register():
 
     hashed_password = generate_password_hash(data['password'])
 
-    new_user = User(
-        username=data['username'],
-        email=data['email'],
-        password=hashed_password
-    )
+    new_user = User(username=data['username'], email=data['email'], password=hashed_password)
     db.session.add(new_user)
     db.session.commit()
 
@@ -95,9 +93,9 @@ def user():
     else:
         return jsonify({'error': 'User not found'}), 404
 
-# API route to submit facebook marketing request
-@app.route('/api/submit_facebook_request', methods=['POST'])
-def submit_facebook_request():
+# API route to submit a sponsor request
+@app.route('/api/submit_sponsor_request/<int:id>', methods=['POST'])
+def submit_sponsor_request(id):
     data = request.get_json()
 
     page_name = data.get('page_name')
@@ -108,177 +106,149 @@ def submit_facebook_request():
     duration = data.get('duration')
     user_id = data.get('user_id')
 
-    if not all([page_name, page_url, campaign_objective, budget, duration, user_id]):
+    if not page_name or not page_url or not campaign_objective or not budget or not duration or not user_id:
         return jsonify({'error': 'Page name, URL, campaign objective, budget, duration, and user ID are required!'}), 400
 
-    new_request = FacebookMarketingRequest(
-        page_name=page_name,
-        page_url=page_url,
-        campaign_objective=campaign_objective,
-        target_audience=target_audience,
-        budget=float(budget),
-        duration=int(duration)
-    )
+    # Handle different request types using match
+    match id:
+        case 1:
+            new_request = FacebookMarketingRequest(
+                page_name=page_name,
+                page_url=page_url,
+                campaign_objective=campaign_objective,
+                target_audience=target_audience,
+                budget=budget,
+                duration=duration,
+            )
+        case 2:
+            new_request = InstagramMarketingRequest(
+                page_name=page_name,
+                page_url=page_url,
+                campaign_objective=campaign_objective,
+                target_audience=target_audience,
+                budget=budget,
+                duration=duration,
+            )
+        case 3:
+            new_request = SnapchatMarketingRequest(
+                page_name=page_name,
+                page_url=page_url,
+                campaign_objective=campaign_objective,
+                target_audience=target_audience,
+                budget=budget,
+                duration=duration,
+            )
+        case 4:
+            new_request = TiktokMarketingRequest(
+                page_name=page_name,
+                page_url=page_url,
+                campaign_objective=campaign_objective,
+                target_audience=target_audience,
+                budget=budget,
+                duration=duration,
+            )
+        case _:
+            return jsonify({'error': 'Invalid marketing request type!'}), 400
 
-    db.session.add(new_request)
-    db.session.commit()
+    try:
+        # Start a transaction
+        db.session.add(new_request)
+        db.session.commit()
 
-    new_message = Message(
-        content=f"New Facebook marketing request submitted:\n"
-                f"Page Name: {page_name}\n"
-                f"Page URL: {page_url}\n"
-                f"Objective: {campaign_objective}\n"
-                f"Target Audience: {target_audience}\n"
-                f"Budget: ${budget}\n"
-                f"Duration: {duration} days",
-        user_id=user_id,
-        request_id=new_request.id,
-    )
+        # Create an entry for request_id
+        new_request_id = RequestIDs(
+            request_id=new_request.id,
+            user_id=user_id,
+            request_type=id
+        )
 
-    db.session.add(new_message)
-    db.session.commit()
+        db.session.add(new_request_id)
+        db.session.commit()
 
-    return jsonify({'message': 'Facebook marketing request submitted successfully!'}), 200
+        # Create a message for the user
+        new_message = Messages(
+            message=f"New marketing request submitted:\n"
+                    f"Platform: {'Facebook' if id == 1 else 'Instagram' if id == 2 else 'Snapchat' if id == 3 else 'TikTok'}\n"
+                    f"Page Name: {page_name}\n"
+                    f"Page URL: {page_url}\n"
+                    f"Objective: {campaign_objective}\n"
+                    f"Target Audience: {target_audience}\n"
+                    f"Budget: ${budget}\n"
+                    f"Duration: {duration} days",
+            user_id=user_id,
+            request_id=new_request.id,
+        )
 
-# API route to submit instagram marketing request
-@app.route('/api/submit_instagram_request', methods=['POST'])
-def submit_instagram_request():
+        db.session.add(new_message)
+        db.session.commit()
+
+    except SQLAlchemyError as e:
+        # Roll back all changes if there's an error
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({'message': 'Marketing request submitted successfully!'}), 200
+
+# API route to get requests by user ID
+@app.route('/api/get_requests/<int:id>', methods=['GET'])
+def get_requests(id):
+    requests = RequestIDs.query.filter_by(user_id=id).all()
+    if not requests:
+        return jsonify({'error': 'No requests found for this user'}), 404
+
+    return jsonify([request.to_dict() for request in requests]), 200
+
+# API route to get messages by request ID
+@app.route('/api/get_messages/<int:id>', methods=['GET'])
+def get_messages(id):
+    messages = Messages.query.filter_by(request_id=id).all()
+    if not messages:
+        return jsonify({'error': 'No messages found for this request'}), 404
+
+    return jsonify([message.to_dict() for message in messages]), 200
+
+# API send message to request
+@app.route('/api/send_message/<id>', methods=['POST'])
+def send_message(id):
     data = request.get_json()
 
-    page_name = data.get('page_name')
-    page_url = data.get('page_url')
-    campaign_objective = data.get('campaign_objective')
-    target_audience = data.get('target_audience')
-    budget = data.get('budget')
-    duration = data.get('duration')
-    user_id = data.get('user_id')
+    message = data.get('message')
+    request_id = data.get('request_id')
 
-    if not page_name or not page_url or not campaign_objective or not budget or not duration or not user_id:
-        return jsonify({'error': 'Page name, URL, and campaign objective are required!'}), 400
+    if not message or not request_id:
+        return jsonify({'error': 'Message, user ID, and request ID are required!'}), 400
 
-    new_request = InstagramMarketingRequest(
-        page_name=page_name,
-        page_url=page_url,
-        campaign_objective=campaign_objective,
-        target_audience=target_audience,
-        budget=float(budget),
-        duration=int(duration)
+    new_message = Messages(
+        message=message,
+        user_id=id,
+        request_id=request_id,
     )
 
-    db.session.add(new_request)
-    db.session.commit()
+    try:
+        db.session.add(new_message)
+        db.session.commit()
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
-    new_message = Message(
-        content=f"New Instagram marketing request submitted:\n"
-                f"Page Name: {page_name}\n"
-                f"Page URL: {page_url}\n"
-                f"Objective: {campaign_objective}\n"
-                f"Target Audience: {target_audience}\n"
-                f"Budget: ${budget}\n"
-                f"Duration: {duration} days",
-        user_id=user_id,
-        request_id=new_request.id,
+    return jsonify({'message': 'Message sent successfully!'}), 200
+
+# API route to create an admin user
+@app.route('/create_admin', methods=['POST'])
+def create_admin():
+    admin_user = User(
+        username='admin',
+        email='admin@example.com',
+        password=generate_password_hash('admin'),
+        created_at=datetime.utcnow(),
+        first_name='Admin',
+        last_name='User'
     )
 
-    db.session.add(new_message)
+    db.session.add(admin_user)
     db.session.commit()
 
-    return jsonify({'message': 'Instagram marketing request submitted successfully!'}), 200
-
-# API route to submit Snapchat marketing request
-@app.route('/api/submit_snapchat_request', methods=['POST'])
-def submit_snapchat_request():
-    data = request.get_json()
-
-    page_name = data.get('page_name')
-    page_url = data.get('page_url')
-    campaign_objective = data.get('campaign_objective')
-    target_audience = data.get('target_audience')
-    budget = data.get('budget')
-    duration = data.get('duration')
-    user_id = data.get('user_id')
-
-    if not page_name or not page_url or not campaign_objective or not budget or not duration or not user_id:
-        return jsonify({'error': 'Page name, URL, and campaign objective are required!'}), 400
-
-    new_request = SnapchatMarketingRequest(
-        page_name=page_name,
-        page_url=page_url,
-        campaign_objective=campaign_objective,
-        target_audience=target_audience,
-        budget=float(budget),
-        duration=int(duration)
-    )
-
-    db.session.add(new_request)
-    db.session.commit()
-
-    new_message = Message(
-        content=f"New Snapchat marketing request submitted:\n"
-                f"Page Name: {page_name}\n"
-                f"Page URL: {page_url}\n"
-                f"Objective: {campaign_objective}\n"
-                f"Target Audience: {target_audience}\n"
-                f"Budget: ${budget}\n"
-                f"Duration: {duration} days",
-        user_id=user_id,
-        request_id=new_request.id,
-    )
-
-    db.session.add(new_message)
-    db.session.commit()
-
-    return jsonify({'message': 'Snapchat marketing request submitted successfully!'}), 200
-
-# API route to submit TikTok marketing request
-@app.route('/api/submit_tiktok_request', methods=['POST'])
-def submit_tiktok_request():
-    data = request.get_json()
-
-    page_name = data.get('page_name')
-    page_url = data.get('page_url')
-    campaign_objective = data.get('campaign_objective')
-    target_audience = data.get('target_audience')
-    budget = data.get('budget')
-    duration = data.get('duration')
-    user_id = data.get('user_id')
-
-    if not page_name or not page_url or not campaign_objective or not budget or not duration or not user_id:
-        return jsonify({'error': 'Page name, URL, and campaign objective are required!'}), 400
-
-    new_request = TiktokMarketingRequest(
-        page_name=page_name,
-        page_url=page_url,
-        campaign_objective=campaign_objective,
-        target_audience=target_audience,
-        budget=float(budget),
-        duration=int(duration)
-    )
-
-    db.session.add(new_request)
-    db.session.commit()
-
-    new_message = Message(
-        content=f"New TikTok marketing request submitted:\n"
-                f"Page Name: {page_name}\n"
-                f"Page URL: {page_url}\n"
-                f"Objective: {campaign_objective}\n"
-                f"Target Audience: {target_audience}\n"
-                f"Budget: ${budget}\n"
-                f"Duration: {duration} days",
-        user_id=user_id,
-        request_id=new_request.id,
-    )
-
-    db.session.add(new_message)
-    db.session.commit()
-
-    return jsonify({'message': 'TikTok marketing request submitted successfully!'}), 200
-
-@app.route('/users')
-def manage_users():
-    users = User.query.all()
-    return render_template('manage_users.html', users=users)
+    return jsonify({"message": "Admin user added successfully!"}), 201
 
 if __name__ == '__main__':
     app.run(debug=True)
