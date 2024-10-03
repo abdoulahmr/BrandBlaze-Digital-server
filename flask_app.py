@@ -109,61 +109,59 @@ def submit_sponsor_request(id):
     if not page_name or not page_url or not campaign_objective or not budget or not duration or not user_id:
         return jsonify({'error': 'Page name, URL, campaign objective, budget, duration, and user ID are required!'}), 400
 
-    # Handle different request types using match
-    match id:
-        case 1:
-            new_request = FacebookMarketingRequest(
-                page_name=page_name,
-                page_url=page_url,
-                campaign_objective=campaign_objective,
-                target_audience=target_audience,
-                budget=budget,
-                duration=duration,
-            )
-        case 2:
-            new_request = InstagramMarketingRequest(
-                page_name=page_name,
-                page_url=page_url,
-                campaign_objective=campaign_objective,
-                target_audience=target_audience,
-                budget=budget,
-                duration=duration,
-            )
-        case 3:
-            new_request = SnapchatMarketingRequest(
-                page_name=page_name,
-                page_url=page_url,
-                campaign_objective=campaign_objective,
-                target_audience=target_audience,
-                budget=budget,
-                duration=duration,
-            )
-        case 4:
-            new_request = TiktokMarketingRequest(
-                page_name=page_name,
-                page_url=page_url,
-                campaign_objective=campaign_objective,
-                target_audience=target_audience,
-                budget=budget,
-                duration=duration,
-            )
-        case _:
-            return jsonify({'error': 'Invalid marketing request type!'}), 400
+    # Handle different request types using if-elif
+    if id == 1:
+        new_request = FacebookMarketingRequest(
+            page_name=page_name,
+            page_url=page_url,
+            campaign_objective=campaign_objective,
+            target_audience=target_audience,
+            budget=budget,
+            duration=duration,
+        )
+    elif id == 2:
+        new_request = InstagramMarketingRequest(
+            page_name=page_name,
+            page_url=page_url,
+            campaign_objective=campaign_objective,
+            target_audience=target_audience,
+            budget=budget,
+            duration=duration,
+        )
+    elif id == 3:
+        new_request = SnapchatMarketingRequest(
+            page_name=page_name,
+            page_url=page_url,
+            campaign_objective=campaign_objective,
+            target_audience=target_audience,
+            budget=budget,
+            duration=duration,
+        )
+    elif id == 4:
+        new_request = TiktokMarketingRequest(
+            page_name=page_name,
+            page_url=page_url,
+            campaign_objective=campaign_objective,
+            target_audience=target_audience,
+            budget=budget,
+            duration=duration,
+        )
+    else:
+        return jsonify({'error': 'Invalid marketing request type!'}), 400
 
     try:
-        # Start a transaction
+       # Start a transaction
         db.session.add(new_request)
-        db.session.commit()
+        db.session.commit()  # Commit to get the new_request.id
 
         # Create an entry for request_id
         new_request_id = RequestIDs(
-            request_id=new_request.id,
             user_id=user_id,
-            request_type=id
+            request_type=id,
         )
 
         db.session.add(new_request_id)
-        db.session.commit()
+        db.session.commit()  # Commit to get the new_request_id.id
 
         # Create a message for the user
         new_message = Messages(
@@ -176,7 +174,7 @@ def submit_sponsor_request(id):
                     f"Budget: ${budget}\n"
                     f"Duration: {duration} days",
             user_id=user_id,
-            request_id=new_request.id,
+            request_id=new_request_id.id,  # Use the ID of the newly created request_id
         )
 
         db.session.add(new_message)
@@ -199,9 +197,10 @@ def get_requests(id):
     return jsonify([request.to_dict() for request in requests]), 200
 
 # API route to get messages by request ID
-@app.route('/api/get_messages/<int:id>', methods=['GET'])
-def get_messages(id):
-    messages = Messages.query.filter_by(request_id=id).all()
+@app.route('/api/get_messages/<int:req_id>', methods=['GET'])
+def get_messages(req_id):
+    messages = Messages.query.filter_by(request_id=req_id).all()
+
     if not messages:
         return jsonify({'error': 'No messages found for this request'}), 404
 

@@ -81,18 +81,18 @@ class RequestIDs(db.Model):
     __tablename__ = 'request_ids'
 
     id = db.Column(db.Integer, primary_key=True)
-    request_id = db.Column(db.Integer, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     request_type = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
     user = db.relationship('User', backref='request_ids')
     def to_dict(self):
         """Convert request id object to dictionary."""
         return {
             'id': self.id,
-            'request_id': self.request_id,
             'user_id': self.user_id,
-            'request_type': self.request_type
+            'request_type': self.request_type,
+            'created_at': self.created_at
         }
 
 class Messages(db.Model):
@@ -102,7 +102,7 @@ class Messages(db.Model):
     message = db.Column(db.String(800), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
-    request_id = db.Column(db.Integer, db.ForeignKey('request_ids.request_id'), nullable=True)
+    request_id = db.Column(db.Integer, db.ForeignKey('request_ids.id'), nullable=True)
     user = db.relationship('User', backref='messages')
     request = db.relationship('RequestIDs', backref='messages')
 
