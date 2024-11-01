@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "app.py",
+      "use": "@vercel/python",
+      "config": { "maxLambdaSize": "15mb" }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "app.py"
+    }
+  ],
+  "env": {
+    "DEBUG": "True",
+    "SQLALCHEMY_DATABASE_URI": "mysql+mysqlconnector://djalalservices:mysqladmin@djalalservices.mysql.pythonanywhere-services.com/djalalservices$default",
+    "SQLALCHEMY_TRACK_MODIFICATIONS": "False",
+    "SECRET_KEY": "your_secret_key",
+    "JWT_SECRET_KEY": "jwt_secret",
+    "UPLOAD_FOLDER": "static/uploads"
+  }
+}
